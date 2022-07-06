@@ -119,22 +119,16 @@ func clnOpenChannel(clientcln *glightning.Lightning, paymentHash, destination st
 	}
 	log.Printf("capacity-------%v", capacity)
 	minConf = 0
-	channelPoint, err := clientcln.FundChannelExt(destination, glightning.NewSat(int(capacity)), nil, true, &minConf, nil)
-	log.Printf("clientcln.FundChannelExt(destination %v, glightning.NewSat(int(capacity)) %v, nil, true, &minConf %v, nil)", destination, glightning.NewSat(int(capacity)), &minConf)
+
+	//open private channel
+	channelPoint, err := clientcln.FundChannelExt(destination, glightning.NewSat(int(capacity)), nil, false, &minConf, nil)
 	if err != nil {
 		log.Printf("clientcln.OpenChannelSync(%v, %v) error: %v", destination, capacity, err)
 		return "", 0, err
 	}
+
 	log.Printf("channel opened without errr")
-	//outputin, err := strconv.Atoi(channelPoint.FundingTxId)
-	//if err != nil {
-	//	log.Printf("strconv.Atoi(channelPoint.FundingTxId) error: %v", err)
-	//	}
-	//database entry
-	//pyhash, _ := hex.DecodeString(paymentHash)
-	//fTxId, _ := hex.DecodeString(channelPoint.FundingTxId)
-	//err = setFundingTx(pyhash, fTxId, outputin)
-	//log.Printf("channel open exited")
+
 	return channelPoint.FundingTxId, uint32(0), err
 }
 
@@ -158,23 +152,6 @@ func OnHtlcAccepted(event *glightning.HtlcAcceptedEvent) (*glightning.HtlcAccept
 	log.Printf("htlc_accepted called\n")
 
 	onion := event.Onion
-	log.Printf("has perhop? %t", onion.PerHop != nil)
-	log.Printf("type is %s", onion.Type)
-
-	var on string
-	if onion.PaymentSecret == "" {
-		on = ""
-	} else {
-		on = "not "
-	}
-	log.Printf("payment secret is %sempty", on)
-
-	if onion.TotalMilliSatoshi == "" {
-		on = "empty"
-	} else {
-		on = onion.TotalMilliSatoshi
-	}
-	log.Printf("amount is %s", on)
 
 	log.Printf("htlc: %v\nchanID: %v\nincoming amount: %v\noutgoing amount: %v\nincoming expiry: %v\noutgoing expiry: %v\npaymentHash: %v\nonionBlob: %v\n\n",
 		event.Htlc,
@@ -202,7 +179,7 @@ func OnHtlcAccepted(event *glightning.HtlcAcceptedEvent) (*glightning.HtlcAccept
 
 	paymentHash := event.Htlc.PaymentHash
 	paymentSecret := onion.PaymentSecret
-	destination := "035885354227dc14ba8ba905ae3932d24c72d428aa2b60a853e67d9db99898a2ab"
+	destination := "02f3e30d613ff2b0a51d2aee2e2c9e59d6894ad405d82873b843c93082af6b2b1b"
 	//incomingAmountMsat, err := strconv.ParseInt(onion.TotalMilliSatoshi, 10, 64)
 	if err != nil {
 		log.Printf("incomingAmountMsat error %v", err)
@@ -215,46 +192,31 @@ func OnHtlcAccepted(event *glightning.HtlcAcceptedEvent) (*glightning.HtlcAccept
 	//	paymentHash, paymentSecret, destination, incomingAmountMsat, outgoingAmountMsat)
 	log.Printf("paymentHash%v\n, paymentSecret%v\n, destination%v\n, incomingAmountMsat%v\n, outgoingAmountMsat%v\n, fundingTxID%v\n, fundingTxOutnum%v\n", paymentHash, paymentSecret, destination, incomingAmountMsat, outgoingAmountMsat, fundingTxID, fundingTxOutnum)
 
-	/////////////////////testing code...end
-
 	//if paymentSecret != "" {
-
 	//if fundingTxID == "" {
 	//	if paymentHash == event.Htlc.PaymentHash {
 
+	fundingTxID, fundingTxOutnum, err = clnOpenChannel(clientcln, paymentHash, destination, incomingAmountMsat)
+	log.Printf("openclnOpenChannelChannel(%v, %v) err: %v", destination, incomingAmountMsat, err)
+	if err != nil {
+		log.Printf(" clnOpenChannel error: %v", err)
+	}
 	/*
-		fundingTxID, fundingTxOutnum, err = clnOpenChannel(clientcln, paymentHash, destination, incomingAmountMsat)
-		log.Printf("openclnOpenChannelChannel(%v, %v) err: %v", destination, incomingAmountMsat, err)
-		if err != nil {
-			log.Printf(" clnOpenChannel error: %v", err)
+		} else { //probing
+			failureCode := "TEMPORARY_CHANNEL_FAILURE"
+			if err := clnIsConnected(clientcln, destination); err == nil {
+				failureCode = "INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS"
+			}
+			log.Printf(" failureCode %v , Error %v", failureCode, err)
 		}
 	*/
 
-	//	} else { //probing
-	//		failureCode := "TEMPORARY_CHANNEL_FAILURE"
-	//		if err := clnIsConnected(clientcln, destination); err == nil {
-	//			failureCode = "INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS"
-	//		}
-	//		log.Printf(" failureCode %v , Error %v", failureCode, err)
-	//	}
-
-	//var h chainhash.Hash
-	//err = h.SetBytes(fundingTxID)
-	//if err != nil {
-	//	log.Printf("h.SetBytes(%x) error: %v", fundingTxID, err)
-	//}
-	//channelPoint := wire.NewOutPoint(&h, fundingTxOutnum).String()
-	//var wg sync.WaitGroup
-	//wg.Add(2)
-	clnResumeOrCancel(clientcln, destination, fundingTxID, paymentHash, outgoingAmountMsat, 99)
+	return clnResumeOrCancel(clientcln, destination, fundingTxID, paymentHash, outgoingAmountMsat, 99, event)
 
 	//}
-
 	//}
-	//log.Printf(" waiting for payment to get forwarded by new channel")
-	//wg.Wait()
-	log.Printf(" wait over new htlc forwarded over ")
-	return event.Continue(), nil
+
+	//return event.Continue(), nil
 }
 
 func clnGetChannel(clientcln *glightning.Lightning, destination string, fundingTxID string) string {
@@ -276,41 +238,26 @@ func clnGetChannel(clientcln *glightning.Lightning, destination string, fundingT
 	log.Printf("No channel found: getChannel(%v)", destination)
 	return ""
 }
-func clnResumeOrCancel(clientcln *glightning.Lightning, destination string, fundingTxID string, paymentHash string, outgoingAmountMsat uint64, riskfactor float32) {
+func clnResumeOrCancel(clientcln *glightning.Lightning, destination string, fundingTxID string, paymentHash string, outgoingAmountMsat uint64, riskfactor float32, event *glightning.HtlcAcceptedEvent) (*glightning.HtlcAcceptedResponse, error) {
 	//deadline := time.Now().Add(10 * time.Second)
 
 	for {
 		chanID := clnGetChannel(clientcln, destination, fundingTxID)
 
 		if chanID != "" {
-
-			/*
-				log.Printf("channel opended successfully chanID: %v)", chanID)
-
-				// new route with zero-conf/new  channel
-				route, err := clientcln.GetRouteSimple(destination, uint64(301), riskfactor)
-				log.Printf("GetRouteSimple  route %v", route)
-				if err != nil {
-					log.Printf(" GetRouteSimple error %v", err)
-				}
-				SendPayLiteResult, err := clientcln.SendPay(route, paymentHash, "", nil, "", "", nil)
-				if err != nil {
-					log.Printf(" SendPayLite error %v", err)
-				}
-				log.Printf("SendPayLiteResult %v", SendPayLiteResult)
-			*/
+			log.Printf("channel opended successfully chanID: %v)", chanID)
 			break
-
 		}
 
-		//	log.Printf("getChannel(%v, %v) returns 0", destination, fundingTxID)
-		//	if time.Now().After(deadline) {
-		//		log.Printf("Stop retrying getChannel(%v, %v)", destination, fundingTxID)
-		//		break
-		//	}
+		log.Printf("waiting for channel to get opened.... %v\n", destination)
+		//if time.Now().After(deadline) {
+		//	log.Printf("Stop retrying getChannel(%v, %v)", destination, fundingTxID)
+		//	break
+		//}
 		time.Sleep(10 * time.Second)
 	}
-
+	log.Printf("forwarding htlc to the destination node and a new private channel was opened")
+	return event.Continue(), nil
 }
 func run_cln() {
 	//var wg sync.WaitGroup
